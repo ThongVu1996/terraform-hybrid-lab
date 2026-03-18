@@ -1,3 +1,3 @@
 *.tfsstate
-
+!.terraform*
 create-hcl-cloud/terraform.tfstate

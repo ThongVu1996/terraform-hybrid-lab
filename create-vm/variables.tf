@@ -1,4 +1,5 @@
 variable "proxmox_api_url_thong" {}
+variable "tailscale_auth_key" { sensitive = true }
 variable "proxmox_api_token_id_thong" {}
 variable "proxmox_api_token_secret_thong" {}
 variable "proxmox_node_thong" {}

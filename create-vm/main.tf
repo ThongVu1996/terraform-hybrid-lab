@@ -59,14 +59,24 @@ resource "proxmox_vm_qemu" "mysql_node" {
       "echo '${var.ssh_password}' | sudo -S apt-get update -y > /dev/null",
       "echo '${var.ssh_password}' | sudo -S apt-get install -y mysql-server",
 
-      "echo '3. Đang cấu hình Database và quyền truy cập...'",
+      "echo '${var.ssh_password}' | sudo -S apt-get install -y curl mysql-server",
+      "echo '3. Đang cài đặt và kích hoạt Tailscale...'",
+      # Tải và chạy script cài đặt chính thức của Tailscale
+      "curl -fsSL https://tailscale.com/install.sh | sh",
+      # Kích hoạt Tailscale với Auth Key, đặt hostname và bật tính năng SSH
+      "echo '${var.ssh_password}' | sudo -S tailscale up --authkey=${var.tailscale_auth_key} --hostname=mysql-lab-provisioner --ssh",
+
+      "echo '4. Đang cấu hình Database và quyền truy cập...'",
       "echo '${var.ssh_password}' | sudo -S systemctl enable --now mysql",
       "sleep 10",
       "echo '${var.ssh_password}' | sudo -S mysql -e \"CREATE DATABASE IF NOT EXISTS ${var.db_name_thong};\"",
       "echo '${var.ssh_password}' | sudo -S mysql -e \"CREATE USER IF NOT EXISTS '${var.db_user_thong}'@'%' IDENTIFIED BY '${var.db_password_thong}';\"",
       "echo '${var.ssh_password}' | sudo -S mysql -e \"GRANT ALL PRIVILEGES ON ${var.db_name_thong}.* TO '${var.db_user_thong}'@'%';\"",
       "echo '${var.ssh_password}' | sudo -S mysql -e \"FLUSH PRIVILEGES;\"",
-      "echo '=== THÀNH CÔNG: MYSQL ĐÃ TỰ ĐỘNG CÀI XONG! ==='"
+      "echo '=== THÀNH CÔNG: MYSQL ĐÃ TỰ ĐỘNG CÀI XONG! ==='",
+
+      "echo '--- IP Tailscale cua ban la: ---'",
+      "tailscale ip -4"
     ]
   }
 }
