@@ -12,6 +12,7 @@ resource "proxmox_virtual_environment_file" "mysql_config" {
   content_type = "snippets"
   datastore_id = "local"
   node_name    = var.proxmox_node_thong
+  count        = var.vm_instance_count
 
   source_raw {
     file_name = "mysql-init-${var.db_name_thong}.yml"
@@ -62,6 +63,7 @@ resource "proxmox_virtual_environment_file" "mysql_config" {
 resource "proxmox_virtual_environment_vm" "mysql_node" {
   name      = "vm-mysql-lab-thong"
   node_name = var.proxmox_node_thong
+  count     = var.vm_instance_count
 
   clone {
     vm_id = data.proxmox_virtual_environment_vms.ubuntu_template.vms[0].vm_id
@@ -78,7 +80,7 @@ resource "proxmox_virtual_environment_vm" "mysql_node" {
         gateway = "172.199.10.1"
       }
     }
-    user_data_file_id = proxmox_virtual_environment_file.mysql_config.id
+    user_data_file_id = proxmox_virtual_environment_file.mysql_config[count.index].id
   }
 
   cpu { cores = 2 }

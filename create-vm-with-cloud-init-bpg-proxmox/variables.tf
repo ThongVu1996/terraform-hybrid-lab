@@ -1,3 +1,8 @@
+variable "vm_instance_count" {
+  type        = number
+  default     = 0
+  description = "Nếu là 0 thì sẽ xóa"
+}
 variable "proxmox_api_url_thong" {
   description = "Địa chỉ API Proxmox (Vd: https://1.2.3.4:8006/)"
 }
