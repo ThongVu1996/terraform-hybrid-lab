@@ -1,0 +1,141 @@
+# =================================================================================
+# 1. TÌM KIẾM TEMPLATE MÁY ẢO
+# =================================================================================
+# Truy vấn Proxmox để tìm ID của máy ảo Template dựa trên tên (String) bạn cung cấp.
+# Điều này giúp code linh hoạt, không bị dính cứng (hardcode) vào một ID cố định.
+data "proxmox_virtual_environment_vms" "ubuntu_template" {
+  node_name = var.proxmox_node_thong
+
+  filter {
+    name   = "name"
+    values = [var.proxmox_template_name]
+  }
+}
+
+# =================================================================================
+# 2. TẠO CẤU HÌNH KHỞI TẠO (CLOUD-INIT SNIPPET)
+# =================================================================================
+# Resource này tạo ra một file .yml lưu trên ổ đĩa của Proxmox (thư mục snippets).
+# Máy ảo sẽ đọc file này khi khởi động lần đầu để tự cài đặt mọi thứ.
+resource "proxmox_virtual_environment_file" "mysql_config" {
+  content_type = "snippets"
+  datastore_id = "local"
+  node_name    = var.proxmox_node_thong
+
+  source_raw {
+    file_name = "mysql-init-${var.db_name_thong}.yml"
+    data      = <<-EOF
+      #cloud-config
+      
+      # --- [BẢO MẬT GIAO DIỆN] ---
+      # Tắt việc in mã SSH Host Key Fingerprints ra màn hình Console. 
+      # Giúp màn hình boot sạch sẽ, không lộ thông tin nhận dạng máy.
+      ssh_fp_console: false
+
+      # --- [ĐIỀU HƯỚNG LOG BẢO MẬT] ---
+      # Toàn bộ nhật ký cài đặt sẽ KHÔNG lưu vào ổ cứng VM.
+      # Nó được "bắn" thẳng ra cổng Serial (/dev/ttyS0). 
+      # Dev SSH vào máy sẽ không thấy file log nào, chỉ Admin Proxmox mới xem được qua Serial Terminal.
+      output: 
+        all: ">> /dev/ttyS0"
+
+      # --- [QUẢN LÝ NGƯỜI DÙNG] ---
+      users:
+        - name: thong
+          groups: sudo
+          shell: /bin/bash
+          sudo: ALL=(ALL) NOPASSWD:ALL # Cho phép Dev toàn quyền Sudo để test máy thoải mái
+          lock_passwd: false
+          password: "${var.ssh_password}"
+
+      # --- [CÀI ĐẶT PHẦN MỀM] ---
+      packages:
+        - mysql-server
+
+      # --- [CHUỖI LỆNH THỰC THI (RUNCMD)] ---
+      runcmd:
+        # Giao tiếp với Dev qua console mặc định (chỉ hiện các thông báo an toàn)
+        - [ sh, -c, "echo '--- [1/5] Dang toi uu Repo Ubuntu VN... ---' > /dev/console" ]
+        - sed -i "s/[a-z]*.archive.ubuntu.com/vn.archive.ubuntu.com/g" /etc/apt/sources.list
+        - apt-get update -y -qq
+
+        - [ sh, -c, "echo '--- [2/5] Mo khoa SSH cho phep dung Password... ---' > /dev/console" ]
+        - sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+        - sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+        - systemctl restart ssh
+
+        - [ sh, -c, "echo '--- [3/5] Dang cai dat mang rieng Tailscale... ---' > /dev/console" ]
+        - curl -fsSL https://tailscale.com/install.sh | sh
+        
+        # BẢO MẬT AUTH KEY: 
+        # 1. Gán Key vào biến môi trường TS_KEY tạm thời trong RAM.
+        # 2. Chạy lệnh Tailscale up (log bắn ra Serial Proxmox để giấu Dev).
+        # 3. Xóa biến TS_KEY khỏi RAM ngay sau khi xong (unset).
+        - export TS_KEY="${var.tailscale_auth_key}" && tailscale up --authkey=$TS_KEY --hostname=mysql-lab-thong --ssh > /dev/ttyS0 2>&1 && unset TS_KEY
+
+        - [ sh, -c, "echo '--- [4/5] Dang cau hinh MySQL Database... ---' > /dev/console" ]
+        - systemctl enable --now mysql
+        - sleep 5
+        - mysql -e "CREATE DATABASE IF NOT EXISTS ${var.db_name_thong};"
+        - mysql -e "CREATE USER IF NOT EXISTS '${var.db_user_thong}'@'%' IDENTIFIED BY '${var.db_password_thong}';"
+        - mysql -e "GRANT ALL PRIVILEGES ON ${var.db_name_thong}.* TO '${var.db_user_thong}'@'%';"
+        - mysql -e "FLUSH PRIVILEGES;"
+
+        - [ sh, -c, "echo '--- [5/5] PHI TANG DU LIEU NHAY CAM (ANTI-FORENSICS) ---' > /dev/console" ]
+        # Xóa vĩnh viễn các file script tạm mà Cloud-init dùng để chứa nội dung runcmd (nơi có Key/Pass rõ).
+        # Sau lệnh này, ngay cả Root trên VM cũng không tìm lại được Key bạn đã dùng.
+        - rm -rf /var/lib/cloud/instance/scripts/runcmd
+        - rm -rf /var/lib/cloud/instances/*/scripts/runcmd
+        
+        # Xóa các file log dư thừa nếu có
+        - rm -f /var/log/cloud-init-output.log
+        - rm -f /var/log/cloud-init.log
+        
+        # Làm sạch lịch sử lệnh của Shell để không ai tra cứu được
+        - history -c
+
+        - [ sh, -c, "echo '=== SETUP THANH CONG - MOI DU LIEU NHAY CAM DA BI XOA ===' > /dev/console" ]
+    EOF
+  }
+}
+
+# =================================================================================
+# 3. TẠO MÁY ẢO VÀ GÁN CẤU HÌNH
+# =================================================================================
+resource "proxmox_virtual_environment_vm" "mysql_node" {
+  name      = "vm-mysql-lab-thong"
+  node_name = var.proxmox_node_thong
+
+  # Nhân bản (Clone) từ Template đã tìm thấy ở bước 1
+  clone {
+    vm_id = data.proxmox_virtual_environment_vms.ubuntu_template.vms[0].vm_id
+  }
+
+  # --- [CỔNG SERIAL HẬU CẦN] ---
+  # Mở cổng Serial 0. Đây là "ống dẫn" giúp Admin xem log cài đặt từ phía Proxmox.
+  # Dev SSH vào máy sẽ KHÔNG có quyền truy cập cổng vật lý này.
+  serial_device {}
+
+  initialization {
+    ip_config {
+      ipv4 {
+        address = "172.199.10.150/24"
+        gateway = "172.199.10.1"
+      }
+    }
+    # Gán file cấu hình Snippet (đã tạo ở bước 2) cho máy ảo này
+    user_data_file_id = proxmox_virtual_environment_file.mysql_config.id
+  }
+
+  cpu { cores = 2 }
+  memory { dedicated = 4096 }
+  network_device { bridge = "vmbr0" }
+}
+
+# =================================================================================
+# 4. OUTPUT - THÔNG BÁO CHO NGƯỜI DÙNG
+# =================================================================================
+output "access_instruction" {
+  value       = "VM đã tạo xong. Hãy dùng: 'tailscale ssh thong@mysql-lab-thong' để truy cập."
+  description = "Hướng dẫn cách truy cập vào máy ảo qua mạng riêng Tailscale."
+}

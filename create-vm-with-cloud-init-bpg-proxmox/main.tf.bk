@@ -1,0 +1,97 @@
+# 1. Dùng Data Source để dò tìm máy ảo theo Tên (String)
+# Kết quả trả về sẽ chứa ID mà Proxmox cần
+data "proxmox_virtual_environment_vms" "ubuntu_template" {
+  node_name = var.proxmox_node_thong
+
+  filter {
+    name   = "name"
+    values = [var.proxmox_template_name] # Đây là biến String bạn muốn
+  }
+}
+
+# 2. Tự động tạo file Cloud-init Snippet trên Proxmox qua API
+resource "proxmox_virtual_environment_file" "mysql_config" {
+  content_type = "snippets"
+  datastore_id = "local"
+  node_name    = var.proxmox_node_thong
+
+  source_raw {
+    file_name = "mysql-init-${var.db_name_thong}.yml"
+    data      = <<-EOF
+      #cloud-config
+      users:
+        - name: thong
+          groups: sudo
+          shell: /bin/bash
+          sudo: ALL=(ALL) NOPASSWD:ALL
+          # Cho phép ssh bằng password dạng plain text
+          lock_passwd: false
+          password: ${var.ssh_password}
+
+      packages:
+        - mysql-server
+        - curl
+      runcmd:
+        # 1. Tối ưu Repo & Apt
+        - sed -i "s/[a-z]*.archive.ubuntu.com/vn.archive.ubuntu.com/g" /etc/apt/sources.list
+        - apt-get update -y
+
+        # 2. MỞ KHÓA SSH PASSWORD (Để Dev dùng được mật khẩu nếu cần)
+        - sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+        - sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+        - systemctl restart ssh
+
+        # 3. Cài đặt Tailscale tự động
+        - curl -fsSL https://tailscale.com/install.sh | sh
+        
+        # 4. KÍCH HOẠT TAILSCALE SSH (Cách 2 bạn muốn)
+        # Thêm flag --ssh để Tailscale tự quản lý đăng nhập không cần key/pass
+        # - sudo tailscale up --authkey=${var.tailscale_auth_key} --hostname=mysql-lab-thong --ssh
+        # - [ tailscale, up, "--authkey=${var.tailscale_auth_key}", "--hostname=mysql-lab-thong", "--ssh" ]
+        - "tailscale up --authkey=${var.tailscale_auth_key} --hostname=mysql-lab-thong --ssh"
+
+        # 5. Cấu hình MySQL (như cũ)
+        - systemctl enable --now mysql
+        - sleep 5
+        - mysql -e "CREATE DATABASE IF NOT EXISTS ${var.db_name_thong};"
+        - mysql -e "CREATE USER IF NOT EXISTS '${var.db_user_thong}'@'%' IDENTIFIED BY '${var.db_password_thong}';"
+        - mysql -e "GRANT ALL PRIVILEGES ON ${var.db_name_thong}.* TO '${var.db_user_thong}'@'%';"
+        - mysql -e "FLUSH PRIVILEGES;"
+        
+        - echo "=== SETUP COMPLETED WITH TAILSCALE SSH ==="
+    EOF
+  }
+}
+
+# 3. Tạo máy ảo và gán file cấu hình
+resource "proxmox_virtual_environment_vm" "mysql_node" {
+  name      = "vm-mysql-zero-touch"
+  node_name = var.proxmox_node_thong
+
+  clone {
+    # Thay vì gõ 9000, ta lấy ID từ kết quả tìm kiếm ở bước 1
+    vm_id = data.proxmox_virtual_environment_vms.ubuntu_template.vms[0].vm_id
+  }
+
+  initialization {
+    ip_config {
+      ipv4 {
+        address = "172.199.10.150/24"
+        gateway = "172.199.10.1"
+      }
+    }
+    user_data_file_id = proxmox_virtual_environment_file.mysql_config.id
+  }
+
+  cpu {
+    cores = 2
+  }
+
+  memory {
+    dedicated = 4096
+  }
+
+  network_device {
+    bridge = "vmbr0"
+  }
+}
