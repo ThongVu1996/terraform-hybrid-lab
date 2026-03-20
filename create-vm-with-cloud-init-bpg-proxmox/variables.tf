@@ -1,6 +1,6 @@
 variable "vm_instance_count" {
   type        = number
-  default     = 0
+  default     = 1
   description = "Nếu là 0 thì sẽ xóa"
 }
 variable "proxmox_api_url_thong" {
