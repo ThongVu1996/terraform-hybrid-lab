@@ -1,3 +1,12 @@
+# 0. Tạo Auth Key tự động, tự hủy, sống trong 1 tiếng
+resource "tailscale_tailnet_key" "proxmox_db_key" {
+  reusable      = false
+  ephemeral     = true
+  preauthorized = true
+  expiry        = 3600
+  tags          = ["tag:database"]
+}
+
 # 1. Dò tìm máy ảo mẫu (Template)
 data "proxmox_virtual_environment_vms" "ubuntu_template" {
   node_name = var.proxmox_node_thong
@@ -35,7 +44,6 @@ resource "proxmox_virtual_environment_file" "mysql_config" {
         - curl
 
       runcmd:
-        # 0. Chờ giải phóng APT Lock (Quan trọng nhất để không bị lỗi 'tailscale not found')
         - [ sh, -c, "echo '--- [0/5] Doi giai phong apt lock... ---' > /dev/ttyS0" ]
         - [ sh, -c, "while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 5; done;" ]
 
@@ -45,24 +53,21 @@ resource "proxmox_virtual_environment_file" "mysql_config" {
         - [ sh, -c, "echo '--- [2/5] Cap nhat Repo & Cai Tailscale... ---' > /dev/ttyS0" ]
         - sed -i "s/[a-z]*.archive.ubuntu.com/vn.archive.ubuntu.com/g" /etc/apt/sources.list
         - apt-get update -y
-        # Xoá trạng thái tailscale nếu nhỡ đã tồn tại
         - [ sh, -c, "rm -rf /var/lib/tailscale/tailscaled.state" ]
-        # Cài đặt tailscal
         - [ sh, -c, "curl -fsSL https://tailscale.com/install.sh | sh > /dev/ttyS0 2>&1" ]
         - [ sh, -c, "echo '--- [3/5] Kick hoat Tailscale... ---' > /dev/ttyS0" ]
-        # Thêm --accept-dns=true để nhận diện được MagicDNS của các máy khác
-        - [ sh, -c, "tailscale up --authkey=${var.tailscale_auth_key} --hostname=db-server  --ssh --accept-dns=true > /dev/ttyS0 2>&1" ]
+        
+        # SỬ DỤNG KEY TỪ OAUTH Ở ĐÂY:
+        - [ sh, -c, "tailscale up --authkey=${tailscale_tailnet_key.proxmox_db_key.key} --hostname=db-server --ssh --accept-dns=true > /dev/ttyS0 2>&1" ]
 
         - [ sh, -c, "echo '--- [4/5] Cau hinh MySQL & Cho phep Remote... ---' > /dev/ttyS0" ]
         - systemctl enable --now mysql
         - sleep 5
-        # Mở Bind Address để MySQL lắng nghe trên card mạng Tailscale (0.0.0.0)
         - [ sh, -c, "sed -i 's/127.0.0.1/0.0.0.0/g' /etc/mysql/mysql.conf.d/mysqld.cnf" ]
         - systemctl restart mysql
         
         # Tạo DB, User và Phân quyền
         - mysql -e "CREATE DATABASE IF NOT EXISTS ${var.db_name_thong};"
-        # Chỉ cho phép User kết nối từ dải IP Tailscale (100.x.x.x) để tăng bảo mật
         - mysql -e "CREATE USER IF NOT EXISTS '${var.db_user_thong}'@'100.%' IDENTIFIED BY '${var.db_password_thong}';"
         - mysql -e "GRANT ALL PRIVILEGES ON ${var.db_name_thong}.* TO '${var.db_user_thong}'@'100.%';"
         - mysql -e "FLUSH PRIVILEGES;"
@@ -82,7 +87,6 @@ resource "proxmox_virtual_environment_vm" "mysql_node" {
     vm_id = data.proxmox_virtual_environment_vms.ubuntu_template.vms[0].vm_id
   }
 
-  # Hiển thị log qua Console Proxmox
   serial_device {}
   vga { type = "serial0" }
 
@@ -103,3 +107,4 @@ resource "proxmox_virtual_environment_vm" "mysql_node" {
   memory { dedicated = 4096 }
   network_device { bridge = "vmbr0" }
 }
+

@@ -37,3 +37,14 @@ variable "proxmox_ssh_private_key" {
   type        = string
   sensitive   = true
 }
+
+# Khai báo biến OAuth Client cho Tailscale
+variable "ts_oauth_client_id" {
+  type        = string
+  description = "Tailscale OAuth Client ID"
+}
+variable "ts_oauth_client_secret" {
+  type        = string
+  sensitive   = true
+  description = "Tailscale OAuth Client Secret"
+}
