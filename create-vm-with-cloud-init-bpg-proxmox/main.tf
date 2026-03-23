@@ -70,6 +70,9 @@ resource "proxmox_virtual_environment_file" "mysql_config" {
         - mysql -e "CREATE DATABASE IF NOT EXISTS ${var.db_name_thong};"
         - mysql -e "CREATE USER IF NOT EXISTS '${var.db_user_thong}'@'100.%' IDENTIFIED BY '${var.db_password_thong}';"
         - mysql -e "GRANT ALL PRIVILEGES ON ${var.db_name_thong}.* TO '${var.db_user_thong}'@'100.%';"
+        # Cho Localhost
+        - mysql -e "CREATE USER IF NOT EXISTS '${var.db_user_thong}'@'localhost' IDENTIFIED BY '${var.db_password_thong}';"
+        - mysql -e "GRANT ALL PRIVILEGES ON ${var.db_name_thong}.* TO '${var.db_user_thong}'@'localhost';"
         - mysql -e "FLUSH PRIVILEGES;"
 
         - [ sh, -c, "echo '=== SETUP COMPLETED SUCCESSFULLY ===' > /dev/ttyS0" ]
