@@ -1,22 +1,9 @@
-terraform {
-  cloud {
-    organization = "tonytechlab-group"
-    workspaces {
-      name = "hybrid-lab-dev"
-    }
-  }
-
-  required_providers {
-    proxmox = {
-      source  = "telmate/proxmox"
-      version = "3.0.2-rc07"
-    }
-  }
-}
-
 provider "proxmox" {
-  pm_api_url          = var.proxmox_api_url_thong
-  pm_api_token_id     = var.proxmox_api_token_id_thong
-  pm_api_token_secret = var.proxmox_api_token_secret_thong
-  pm_tls_insecure     = true
+  # Provider sẽ tự động sử dụng các biến môi trường:
+  # PM_API_URL
+  # PM_API_TOKEN_ID
+  # PM_API_TOKEN_SECRET
+  # mà bạn đã cấu hình trên HCP Terraform UI.
+
+  pm_tls_insecure = true
 }

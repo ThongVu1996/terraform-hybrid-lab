@@ -1,8 +1,9 @@
-output "vm_ip" {
-  value       = "172.199.10.150"
-  description = "Địa chỉ IP cố định của MySQL Server"
+output "vm_name" {
+  value       = module.mysql_vm.vm_name
+  description = "Tên của máy ảo MySQL Server"
 }
 
-output "mysql_status" {
-  value = "MySQL is being installed and configured..."
+output "vm_ip_lan" {
+  value       = module.mysql_vm.vm_ip_lan
+  description = "Địa chỉ IP LAN của máy ảo"
 }
