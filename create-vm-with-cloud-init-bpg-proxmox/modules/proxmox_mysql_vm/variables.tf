@@ -32,13 +32,6 @@ variable "db_password" {
   sensitive   = true
 }
 
-
-variable "user_name" {
-  description = "Tên user dùng để ssh vào máy vm (mặc định là thong)"
-  type        = string
-  default     = "thong"
-}
-
 variable "user_password" {
   description = "Mật khẩu đăng nhập qua Console/SSH của user 'thong'"
   type        = string
@@ -46,17 +39,20 @@ variable "user_password" {
 }
 
 variable "proxmox_ssh_private_key" {
-  description = "Nội dung Private Key SSH kết nối vào Proxmox (Dùng cho SSH connection blocks)"
+  description = "Nội dung Private Key SSH kết nối vào Proxmox (Dùng cho SSH connection blocks) giúp đưa file cấu hình vào bên trong thư mục /var/lib/vz/snippets của máy promox"
   type        = string
   sensitive   = true
 }
 
+variable "user_name" {
+  description = "Tên user dùng để ssh vào máy vm"
+  type        = string
+}
+
 variable "vm_ip_cidr" {
   type = string
-  description = "IP address của máy ảo (ví dụ: [IP_ADDRESS])"
 }
 
 variable "vm_gateway" {
   type = string
-  description = "Gateway của máy ảo (ví dụ: [IP_ADDRESS])"
 }
